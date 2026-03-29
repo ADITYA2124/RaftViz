@@ -1,0 +1,11 @@
+services:
+  raft-node:
+    build: .
+    container_name: ${NODE_ID}
+    env_file: .env
+    ports:
+      - "${PORT}:${PORT}"
+    environment:
+      - SERVER_PORT=${PORT}
+      - PORT=${PORT}
+    command: sh -c "java -Dserver.port=${PORT} -jar /app/app.jar"

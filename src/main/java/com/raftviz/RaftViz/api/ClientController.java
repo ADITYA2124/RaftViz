@@ -1,0 +1,36 @@
+package com.raftviz.RaftViz.api;
+
+import  com.raftviz.RaftViz.raft.RaftNode;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RestController;
+
+@RestController
+public class ClientController {
+    private final RaftNode node;
+    public ClientController(RaftNode node) { this.node = node; }
+
+
+    public static class LogReq { public String message; }
+    public static class LogResp { public long index; public String leader; }
+
+
+    @PostMapping("/log")
+    public ResponseEntity<?> append(@RequestBody LogReq req) {
+        if (!node.isLeader()) {
+            String leader = node.currentLeader();
+            if (leader != null) {
+                return ResponseEntity.status(HttpStatus.TEMPORARY_REDIRECT)
+                        .header(HttpHeaders.LOCATION, leader + "/log")
+                        .body("Redirecting to leader: " + leader);
+            }
+            return ResponseEntity.status(503).body("No leader – try again");
+        }
+        long idx = node.appendClientCommand(req.message == null ? "(empty)" : req.message);
+        LogResp r = new LogResp(); r.index = idx; r.leader = node.currentLeader();
+        return ResponseEntity.ok(r);
+    }
+}

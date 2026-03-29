@@ -1,0 +1,17 @@
+server:
+  port: ${PORT:8080}
+  shutdown: graceful
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
+raft:
+  node-id: ${NODE_ID:node-1}
+  advertise-addr: ${ADVERTISE_ADDR:http://localhost:8080}
+  peers: ${PEERS:}
+  election-timeout-min: ${ELECTION_TIMEOUT_MIN:1200}
+  election-timeout-max: ${ELECTION_TIMEOUT_MAX:2000}
+  heartbeat-interval: ${HEARTBEAT_INTERVAL:500}

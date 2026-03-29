@@ -1,0 +1,8 @@
+services:
+  raft-node:
+    build: .          # or replace with "image: yourname/raftviz:1.0" if you pushed it
+    container_name: ${NODE_ID}
+    env_file: .env
+    ports:
+      - "8080:8080"
+    command: sh -c "java -Dserver.port=${PORT} -jar /app/app.jar"
