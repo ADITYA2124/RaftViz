@@ -1,6 +1,8 @@
 package com.raftviz.RaftViz.api;
 
 import com.raftviz.RaftViz.raft.RaftNode;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -9,6 +11,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
+@Tag(name = "Client API", description = "Client-facing endpoints for appending commands to the Raft log")
 public class ClientController {
     private final RaftNode node;
 
@@ -26,6 +29,7 @@ public class ClientController {
     }
 
     @PostMapping("/log")
+    @Operation(summary = "Append a client command", description = "Appends a command through the current leader. Followers redirect to the leader when known.")
     public ResponseEntity<?> append(@RequestBody LogReq req) {
         if (!node.isLeader()) {
             String leaderUri = node.currentLeaderUri();

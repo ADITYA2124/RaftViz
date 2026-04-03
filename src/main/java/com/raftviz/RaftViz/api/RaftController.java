@@ -9,6 +9,8 @@ import com.raftviz.RaftViz.rpc.AppendEntriesRequest;
 import com.raftviz.RaftViz.rpc.AppendEntriesResponse;
 import com.raftviz.RaftViz.rpc.RequestVoteRequest;
 import com.raftviz.RaftViz.rpc.RequestVoteResponse;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -24,6 +26,7 @@ import static org.springframework.http.HttpStatus.NOT_FOUND;
 
 @RestController
 @RequestMapping("/raft")
+@Tag(name = "Raft API", description = "Internal Raft RPCs plus cluster inspection endpoints")
 public class RaftController {
     private final RaftNode node;
     private final ClusterMembershipService membershipService;
@@ -34,31 +37,37 @@ public class RaftController {
     }
 
     @PostMapping("/requestVote")
+    @Operation(summary = "Request a vote", description = "Internal Raft RPC used during leader election.")
     public RequestVoteResponse requestVote(@RequestBody RequestVoteRequest request) {
         return node.onRequestVote(request);
     }
 
     @PostMapping("/appendEntries")
+    @Operation(summary = "Append entries", description = "Internal Raft RPC used for replication and heartbeats.")
     public AppendEntriesResponse appendEntries(@RequestBody AppendEntriesRequest request) {
         return node.onAppendEntries(request);
     }
 
     @GetMapping("/state")
+    @Operation(summary = "Get node state", description = "Returns the current node's role, term, leader, and replication progress.")
     public NodeStatus state() {
         return node.status();
     }
 
     @GetMapping("/logs")
+    @Operation(summary = "Get local node logs", description = "Returns the log entries stored on the current node.")
     public List<LogEntry> logs() {
         return node.logs();
     }
 
     @GetMapping("/cluster")
+    @Operation(summary = "Get discovered cluster members", description = "Returns dynamically discovered nodes and their connectivity status.")
     public List<ClusterNodeInfo> cluster() {
         return membershipService.clusterNodes();
     }
 
     @GetMapping("/nodes/{nodeId}/logs")
+    @Operation(summary = "Get logs for a single node", description = "Fetches log entries from one specific node in the discovered cluster.")
     public Object logsForNode(@PathVariable("nodeId") String targetNodeId) {
         NodeStatus selfStatus = node.status();
         if (selfStatus.nodeId.equals(targetNodeId)) {
