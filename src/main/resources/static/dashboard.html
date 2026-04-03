@@ -1,581 +1,586 @@
 <!doctype html>
-<html>
+<html lang="en">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>RaftViz – Consensus Protocol Visualization</title>
+  <title>RaftViz Dashboard</title>
   <style>
-    * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
+    :root {
+      --bg: #f3efe5;
+      --bg-strong: #e6dccd;
+      --panel: rgba(255, 251, 245, 0.84);
+      --panel-strong: rgba(255, 248, 240, 0.96);
+      --text: #1d2433;
+      --muted: #5c6678;
+      --border: rgba(29, 36, 51, 0.12);
+      --shadow: 0 24px 60px rgba(61, 52, 40, 0.16);
+      --leader: #197278;
+      --follower: #275dad;
+      --candidate: #ca6702;
+      --offline: #868e96;
+      --accent: #8f2d56;
+      --ok: #2a9d8f;
+      --warn: #bc6c25;
+      --danger: #d64933;
     }
+
+    * { box-sizing: border-box; }
 
     body {
-      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
-      background: linear-gradient(135deg, #0a0e27 0%, #1a1f3a 100%);
-      color: #e0e6ed;
+      margin: 0;
       min-height: 100vh;
-      overflow-x: hidden;
+      font-family: Georgia, "Times New Roman", serif;
+      color: var(--text);
+      background:
+        radial-gradient(circle at top left, rgba(143, 45, 86, 0.15), transparent 28%),
+        radial-gradient(circle at top right, rgba(25, 114, 120, 0.18), transparent 32%),
+        linear-gradient(135deg, var(--bg) 0%, #efe5d5 48%, var(--bg-strong) 100%);
     }
 
-    .container {
-      max-width: 1400px;
-      margin: 0 auto;
-      padding: 32px;
+    .shell {
+      width: min(1320px, calc(100vw - 32px));
+      margin: 24px auto;
+      padding: 28px;
+      border: 1px solid rgba(255,255,255,0.5);
+      border-radius: 28px;
+      background: rgba(255, 255, 255, 0.34);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(20px);
     }
 
-    header {
-      text-align: center;
-      margin-bottom: 48px;
-      position: relative;
+    .hero {
+      display: grid;
+      grid-template-columns: 1.4fr 1fr;
+      gap: 20px;
+      align-items: stretch;
+    }
+
+    .hero-card, .panel {
+      border-radius: 24px;
+      padding: 24px;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      box-shadow: 0 14px 30px rgba(40, 32, 24, 0.08);
     }
 
     h1 {
-      font-size: 48px;
-      font-weight: 700;
-      background: linear-gradient(135deg, #60a5fa 0%, #a78bfa 50%, #ec4899 100%);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      background-clip: text;
-      margin-bottom: 12px;
-      letter-spacing: -1px;
+      margin: 0 0 10px;
+      font-size: clamp(36px, 4vw, 60px);
+      line-height: 0.95;
+      letter-spacing: -0.03em;
     }
 
     .subtitle {
+      margin: 0;
+      font-family: "Segoe UI", sans-serif;
       font-size: 16px;
-      color: #94a3b8;
-      font-weight: 400;
+      line-height: 1.6;
+      color: var(--muted);
+      max-width: 62ch;
     }
 
-    .param-info {
-      display: inline-block;
-      margin-top: 16px;
-      padding: 12px 24px;
-      background: rgba(30, 41, 59, 0.6);
-      border: 1px solid rgba(148, 163, 184, 0.2);
-      border-radius: 8px;
-      font-size: 13px;
-      font-family: 'Courier New', monospace;
-      color: #cbd5e1;
-      backdrop-filter: blur(10px);
+    .pill-row, .summary-grid, .cluster-grid {
+      display: grid;
+      gap: 14px;
     }
 
-    #canvas-wrapper {
-      position: relative;
-      width: 700px;
-      height: 700px;
-      margin: 0 auto 48px;
+    .pill-row {
+      grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+      margin-top: 22px;
     }
 
-    #canvas {
-      position: relative;
-      width: 100%;
-      height: 100%;
-      border-radius: 24px;
-      background: rgba(15, 23, 42, 0.4);
-      border: 2px solid rgba(148, 163, 184, 0.1);
-      backdrop-filter: blur(20px);
-      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+    .pill {
+      padding: 14px 16px;
+      border-radius: 18px;
+      background: rgba(255, 255, 255, 0.68);
+      border: 1px solid rgba(29, 36, 51, 0.08);
+      font-family: "Segoe UI", sans-serif;
     }
 
-    canvas {
-      position: absolute;
-      top: 0;
-      left: 0;
-      pointer-events: none;
-      border-radius: 24px;
+    .pill-label {
+      display: block;
+      margin-bottom: 6px;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--muted);
     }
 
-    .node {
-      position: absolute;
-      width: 120px;
-      height: 120px;
-      border-radius: 50%;
+    .pill-value {
+      font-size: 26px;
+      font-weight: 700;
+    }
+
+    .leader-banner {
       display: flex;
       flex-direction: column;
-      justify-content: center;
-      align-items: center;
-      transition: all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
-      cursor: pointer;
-      z-index: 10;
+      justify-content: space-between;
+      min-height: 100%;
+      background:
+        linear-gradient(160deg, rgba(25, 114, 120, 0.12), rgba(143, 45, 86, 0.10)),
+        var(--panel-strong);
     }
 
-    .node-inner {
-      width: 100%;
-      height: 100%;
-      border-radius: 50%;
-      display: flex;
-      flex-direction: column;
-      justify-content: center;
-      align-items: center;
+    .leader-eyebrow {
+      font-family: "Segoe UI", sans-serif;
+      text-transform: uppercase;
+      font-size: 12px;
+      letter-spacing: 0.14em;
+      color: var(--muted);
+    }
+
+    .leader-name {
+      margin-top: 12px;
+      font-size: clamp(28px, 3vw, 42px);
+      line-height: 1;
+    }
+
+    .leader-copy {
+      margin-top: 10px;
+      font-family: "Segoe UI", sans-serif;
+      color: var(--muted);
+      line-height: 1.6;
+    }
+
+    .summary-grid {
+      margin-top: 20px;
+      grid-template-columns: 1.3fr 1fr;
+      align-items: start;
+    }
+
+    .cluster-grid {
+      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    }
+
+    .node-card {
       position: relative;
       overflow: hidden;
+      cursor: pointer;
+      transition: transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease;
     }
 
-    .node::before {
-      content: '';
+    .node-card:hover,
+    .node-card.selected {
+      transform: translateY(-3px);
+      box-shadow: 0 18px 28px rgba(40, 32, 24, 0.12);
+      border-color: rgba(29, 36, 51, 0.2);
+    }
+
+    .node-card.selected::after {
+      content: "";
       position: absolute;
-      inset: -4px;
-      border-radius: 50%;
-      padding: 4px;
-      background: linear-gradient(135deg, transparent, transparent);
-      -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-      -webkit-mask-composite: xor;
-      mask-composite: exclude;
-      opacity: 0;
-      transition: opacity 0.4s ease;
+      inset: auto 0 0 0;
+      height: 5px;
+      background: linear-gradient(90deg, var(--accent), rgba(143, 45, 86, 0.2));
     }
 
-    .leader {
-      background: linear-gradient(135deg, #10b981 0%, #059669 100%);
-      box-shadow: 0 0 40px rgba(16, 185, 129, 0.6), 0 8px 32px rgba(0, 0, 0, 0.3);
-      transform: scale(1.15);
-      animation: pulse-leader 2s ease-in-out infinite;
+    .node-header {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: flex-start;
     }
 
-    .leader::before {
-      background: linear-gradient(135deg, #34d399, #10b981, #059669);
-      opacity: 1;
-      animation: rotate 3s linear infinite;
-    }
-
-    @keyframes pulse-leader {
-      0%, 100% { transform: scale(1.15); }
-      50% { transform: scale(1.2); }
-    }
-
-    .follower {
-      background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
-      box-shadow: 0 0 30px rgba(59, 130, 246, 0.4), 0 8px 32px rgba(0, 0, 0, 0.3);
-    }
-
-    .follower::before {
-      background: linear-gradient(135deg, #60a5fa, #3b82f6);
-      opacity: 0.6;
-      animation: rotate 4s linear infinite;
-    }
-
-    .candidate {
-      background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
-      box-shadow: 0 0 35px rgba(245, 158, 11, 0.5), 0 8px 32px rgba(0, 0, 0, 0.3);
-      animation: pulse-candidate 1.5s ease-in-out infinite;
-    }
-
-    .candidate::before {
-      background: linear-gradient(135deg, #fbbf24, #f59e0b);
-      opacity: 0.8;
-      animation: rotate 2s linear infinite;
-    }
-
-    @keyframes pulse-candidate {
-      0%, 100% { transform: scale(1); }
-      50% { transform: scale(1.08); }
-    }
-
-    .offline {
-      background: linear-gradient(135deg, #475569 0%, #334155 100%);
-      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
-      opacity: 0.5;
-      filter: grayscale(1);
-    }
-
-    @keyframes rotate {
-      from { transform: rotate(0deg); }
-      to { transform: rotate(360deg); }
-    }
-
-    .node:hover {
-      transform: scale(1.1);
-      z-index: 20;
-    }
-
-    .leader:hover {
-      transform: scale(1.25);
-    }
-
-    .node-id {
-      font-size: 20px;
-      font-weight: 700;
-      color: white;
-      text-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
-      margin-bottom: 4px;
-      z-index: 1;
-    }
-
-    .node-role {
-      font-size: 11px;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 1px;
-      color: rgba(255, 255, 255, 0.9);
-      z-index: 1;
-    }
-
-    .node-term {
-      font-size: 10px;
-      color: rgba(255, 255, 255, 0.7);
-      margin-top: 2px;
-      z-index: 1;
-    }
-
-    .info-panel {
-      max-width: 900px;
-      margin: 0 auto;
-      padding: 32px;
-      background: rgba(15, 23, 42, 0.6);
-      border: 1px solid rgba(148, 163, 184, 0.2);
-      border-radius: 16px;
-      backdrop-filter: blur(20px);
-      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
-    }
-
-    .leader-info {
-      text-align: center;
+    .node-title {
       font-size: 24px;
-      margin-bottom: 32px;
-      padding: 24px;
-      background: rgba(16, 185, 129, 0.1);
-      border: 1px solid rgba(16, 185, 129, 0.3);
-      border-radius: 12px;
+      margin: 0;
     }
 
-    .leader-info.no-leader {
-      background: rgba(245, 158, 11, 0.1);
-      border-color: rgba(245, 158, 11, 0.3);
+    .node-url {
+      margin-top: 8px;
+      font-family: "Segoe UI", sans-serif;
+      font-size: 13px;
+      color: var(--muted);
+      word-break: break-word;
     }
 
-    .leader-info strong {
-      color: #10b981;
-      font-weight: 700;
-    }
-
-    .leader-info.no-leader strong {
-      color: #f59e0b;
-    }
-
-    .stats-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-      gap: 16px;
-    }
-
-    .stat-card {
-      padding: 20px;
-      background: rgba(30, 41, 59, 0.4);
-      border: 1px solid rgba(148, 163, 184, 0.15);
-      border-radius: 12px;
-      transition: all 0.3s ease;
-    }
-
-    .stat-card:hover {
-      transform: translateY(-4px);
-      border-color: rgba(148, 163, 184, 0.3);
-      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
-    }
-
-    .stat-label {
+    .status-chip {
+      padding: 8px 10px;
+      border-radius: 999px;
+      font-family: "Segoe UI", sans-serif;
       font-size: 12px;
-      color: #94a3b8;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-      margin-bottom: 8px;
-    }
-
-    .stat-value {
-      font-size: 28px;
       font-weight: 700;
-      color: #e0e6ed;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      color: white;
     }
 
-    .connection-line {
-      position: absolute;
-      pointer-events: none;
-      z-index: 1;
+    .role-leader { background: var(--leader); }
+    .role-follower { background: var(--follower); }
+    .role-candidate { background: var(--candidate); }
+    .role-offline { background: var(--offline); }
+
+    .node-metrics {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+      margin-top: 18px;
     }
 
-    @keyframes fadeIn {
-      from {
-        opacity: 0;
-        transform: scale(0.8);
-      }
-      to {
-        opacity: 1;
-        transform: scale(1);
-      }
+    .metric {
+      padding: 12px;
+      border-radius: 16px;
+      background: rgba(255, 255, 255, 0.72);
+      border: 1px solid rgba(29, 36, 51, 0.08);
+      font-family: "Segoe UI", sans-serif;
     }
 
-    .node {
-      animation: fadeIn 0.6s ease-out;
+    .metric span {
+      display: block;
+      font-size: 11px;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 4px;
     }
 
-    .status-indicator {
-      display: inline-block;
-      width: 10px;
-      height: 10px;
-      border-radius: 50%;
-      margin-right: 8px;
-      animation: blink 2s ease-in-out infinite;
+    .metric strong {
+      font-size: 22px;
     }
 
-    .status-online {
-      background: #10b981;
-      box-shadow: 0 0 12px rgba(16, 185, 129, 0.6);
+    .panel h2 {
+      margin: 0 0 14px;
+      font-size: 30px;
     }
 
-    .status-offline {
-      background: #ef4444;
-      box-shadow: 0 0 12px rgba(239, 68, 68, 0.6);
+    .panel-subtitle {
+      margin: 0 0 18px;
+      font-family: "Segoe UI", sans-serif;
+      color: var(--muted);
+      line-height: 1.6;
     }
 
-    @keyframes blink {
-      0%, 100% { opacity: 1; }
-      50% { opacity: 0.4; }
-    }
-
-    .particles {
-      position: absolute;
-      top: 0;
-      left: 0;
+    .log-table {
       width: 100%;
-      height: 100%;
-      pointer-events: none;
-      z-index: 0;
+      border-collapse: collapse;
+      font-family: "Segoe UI", sans-serif;
+      font-size: 14px;
     }
 
-    .particle {
-      position: absolute;
-      width: 4px;
-      height: 4px;
-      background: rgba(96, 165, 250, 0.6);
-      border-radius: 50%;
-      animation: float 8s infinite ease-in-out;
+    .log-table th, .log-table td {
+      padding: 12px 10px;
+      border-bottom: 1px solid rgba(29, 36, 51, 0.08);
+      text-align: left;
+      vertical-align: top;
     }
 
-    @keyframes float {
-      0%, 100% {
-        transform: translateY(0) translateX(0);
-        opacity: 0;
+    .log-table th {
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--muted);
+    }
+
+    .log-empty {
+      padding: 18px;
+      border-radius: 18px;
+      background: rgba(255, 255, 255, 0.6);
+      font-family: "Segoe UI", sans-serif;
+      color: var(--muted);
+    }
+
+    .health-list {
+      display: grid;
+      gap: 12px;
+    }
+
+    .health-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 14px 16px;
+      border-radius: 16px;
+      background: rgba(255, 255, 255, 0.66);
+      border: 1px solid rgba(29, 36, 51, 0.08);
+      font-family: "Segoe UI", sans-serif;
+    }
+
+    .health-badge {
+      font-weight: 700;
+    }
+
+    .online { color: var(--ok); }
+    .degraded { color: var(--warn); }
+    .offline { color: var(--danger); }
+
+    @media (max-width: 980px) {
+      .hero, .summary-grid {
+        grid-template-columns: 1fr;
       }
-      10% {
-        opacity: 1;
+
+      .shell {
+        width: min(100vw - 18px, 1320px);
+        padding: 16px;
       }
-      90% {
-        opacity: 1;
-      }
-      100% {
-        transform: translateY(-700px) translateX(100px);
-        opacity: 0;
+
+      .node-metrics {
+        grid-template-columns: repeat(2, 1fr);
       }
     }
   </style>
 </head>
 <body>
-<div class="container">
-  <header>
-    <h1>RaftViz</h1>
-    <p class="subtitle">Real-time Raft Consensus Protocol Visualization</p>
-    <div class="param-info">
-      ?nodes=http://192.168.29.200:8080,http://192.168.29.186:8080
-    </div>
-  </header>
+  <main class="shell">
+    <section class="hero">
+      <article class="hero-card">
+        <h1>RaftViz</h1>
+        <p class="subtitle">
+          Open any node and the dashboard discovers the cluster automatically. Leader election, replication progress,
+          connectivity, and single-node logs are refreshed live from the network.
+        </p>
+        <div class="pill-row" id="summary-pills"></div>
+      </article>
+      <article class="hero-card leader-banner">
+        <div>
+          <div class="leader-eyebrow">Cluster leader</div>
+          <div class="leader-name" id="leader-name">Looking for quorum...</div>
+          <p class="leader-copy" id="leader-copy">
+            Waiting for nodes to announce themselves and elect a leader.
+          </p>
+        </div>
+        <div class="leader-copy" id="origin-copy"></div>
+      </article>
+    </section>
 
-  <div id="canvas-wrapper">
-    <div id="canvas">
-      <canvas id="connections"></canvas>
-      <div class="particles" id="particles"></div>
-    </div>
-  </div>
+    <section class="summary-grid">
+      <section class="panel">
+        <h2>Cluster Topology</h2>
+        <p class="panel-subtitle">
+          Nodes are discovered dynamically over the network. Select any node card to inspect only that node’s log.
+        </p>
+        <div class="cluster-grid" id="cluster-grid"></div>
+      </section>
 
-  <div class="info-panel">
-    <div id="leader-info" class="leader-info"></div>
-    <div id="stats" class="stats-grid"></div>
-  </div>
-</div>
+      <section class="panel">
+        <h2>Connectivity</h2>
+        <p class="panel-subtitle">
+          Health is derived from discovery heartbeats and live state queries.
+        </p>
+        <div class="health-list" id="health-list"></div>
+      </section>
+    </section>
 
-<script>
-  const params = new URLSearchParams(location.search);
-  const nodeUrls = (params.get('nodes') || '').split(',').filter(Boolean);
-  const canvas = document.getElementById('canvas');
-  const connectionsCanvas = document.getElementById('connections');
-  const ctx = connectionsCanvas.getContext('2d');
-  const leaderInfo = document.getElementById('leader-info');
-  const statsDiv = document.getElementById('stats');
-  const particlesDiv = document.getElementById('particles');
+    <section class="panel" style="margin-top: 20px;">
+      <h2 id="logs-title">Node Logs</h2>
+      <p class="panel-subtitle" id="logs-subtitle">
+        Pick a node to inspect its replicated log.
+      </p>
+      <div id="logs-view" class="log-empty">No node selected yet.</div>
+    </section>
+  </main>
 
-  connectionsCanvas.width = 700;
-  connectionsCanvas.height = 700;
+  <script>
+    const selfBase = window.location.origin;
+    const summaryPills = document.getElementById('summary-pills');
+    const leaderName = document.getElementById('leader-name');
+    const leaderCopy = document.getElementById('leader-copy');
+    const originCopy = document.getElementById('origin-copy');
+    const clusterGrid = document.getElementById('cluster-grid');
+    const healthList = document.getElementById('health-list');
+    const logsTitle = document.getElementById('logs-title');
+    const logsSubtitle = document.getElementById('logs-subtitle');
+    const logsView = document.getElementById('logs-view');
 
-  // Create floating particles
-  function createParticles() {
-    for (let i = 0; i < 20; i++) {
-      const particle = document.createElement('div');
-      particle.className = 'particle';
-      particle.style.left = Math.random() * 700 + 'px';
-      particle.style.top = Math.random() * 700 + 'px';
-      particle.style.animationDelay = Math.random() * 8 + 's';
-      particle.style.animationDuration = (8 + Math.random() * 4) + 's';
-      particlesDiv.appendChild(particle);
+    let selectedNodeId = null;
+
+    originCopy.textContent = `Viewing from ${selfBase}`;
+
+    function roleClass(role) {
+      const normalized = (role || 'OFFLINE').toLowerCase();
+      return `role-${normalized}`;
     }
-  }
 
-  createParticles();
-
-  async function fetchState(url) {
-    try {
-      const resp = await fetch(url + '/raft/state', { cache: 'no-store' });
-      if (!resp.ok) throw new Error();
-      const s = await resp.json();
-      return { ok: true, url, state: s };
-    } catch (e) {
-      return {
-        ok: false,
-        url,
-        state: {
-          nodeId: url,
-          role: 'OFFLINE',
-          currentTerm: 0,
-          leaderId: '—',
-          commitIndex: 0,
-          lastApplied: 0,
-          logSize: 0
-        }
-      };
+    function escapeHtml(value) {
+      return String(value ?? '')
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#39;');
     }
-  }
 
-  function drawConnections(stats, positions) {
-    ctx.clearRect(0, 0, 700, 700);
-    const leader = stats.find(s => s.state.role === 'LEADER');
+    async function fetchJson(url) {
+      const response = await fetch(url, { cache: 'no-store' });
+      if (!response.ok) {
+        throw new Error(`Request failed for ${url}`);
+      }
+      return response.json();
+    }
 
-    if (leader) {
-      const leaderIdx = stats.indexOf(leader);
-      const leaderPos = positions[leaderIdx];
+    async function fetchClusterNodes() {
+      const cluster = await fetchJson(`${selfBase}/raft/cluster`);
+      if (!Array.isArray(cluster)) {
+        return [];
+      }
+      return cluster;
+    }
 
-      stats.forEach((node, i) => {
-        if (i !== leaderIdx && node.state.role !== 'OFFLINE') {
-          const nodePos = positions[i];
+    async function fetchNodeState(node) {
+      try {
+        const state = await fetchJson(`${node.uri}/raft/state`);
+        return { node, ok: true, state };
+      } catch (error) {
+        return {
+          node,
+          ok: false,
+          state: {
+            nodeId: node.nodeId,
+            nodeUri: node.uri,
+            role: 'OFFLINE',
+            currentTerm: 0,
+            leaderId: null,
+            leaderUri: null,
+            commitIndex: 0,
+            lastApplied: 0,
+            logSize: 0,
+            clusterSize: 0,
+            peers: []
+          }
+        };
+      }
+    }
 
-          const gradient = ctx.createLinearGradient(
-            leaderPos.x, leaderPos.y,
-            nodePos.x, nodePos.y
-          );
-          gradient.addColorStop(0, 'rgba(16, 185, 129, 0.4)');
-          gradient.addColorStop(1, 'rgba(59, 130, 246, 0.4)');
+    async function fetchNodeLogs(nodeId) {
+      return fetchJson(`${selfBase}/raft/nodes/${encodeURIComponent(nodeId)}/logs`);
+    }
 
-          ctx.strokeStyle = gradient;
-          ctx.lineWidth = 2;
-          ctx.setLineDash([5, 5]);
-          ctx.beginPath();
-          ctx.moveTo(leaderPos.x, leaderPos.y);
-          ctx.lineTo(nodePos.x, nodePos.y);
-          ctx.stroke();
-        }
+    function renderSummary(states) {
+      const online = states.filter(item => item.ok).length;
+      const leader = states.find(item => item.state.role === 'LEADER');
+      const maxTerm = states.reduce((max, item) => Math.max(max, item.state.currentTerm || 0), 0);
+      const maxCommit = states.reduce((max, item) => Math.max(max, item.state.commitIndex || 0), 0);
+
+      summaryPills.innerHTML = `
+        <div class="pill"><span class="pill-label">Known Nodes</span><span class="pill-value">${states.length}</span></div>
+        <div class="pill"><span class="pill-label">Online Nodes</span><span class="pill-value">${online}</span></div>
+        <div class="pill"><span class="pill-label">Current Term</span><span class="pill-value">${maxTerm}</span></div>
+        <div class="pill"><span class="pill-label">Committed Index</span><span class="pill-value">${maxCommit}</span></div>
+      `;
+
+      if (leader) {
+        leaderName.textContent = `${leader.state.nodeId} leads term ${leader.state.currentTerm}`;
+        leaderCopy.textContent = `Leader endpoint ${leader.state.nodeUri} is replicating to ${Math.max(leader.state.clusterSize - 1, 0)} peers.`;
+      } else {
+        leaderName.textContent = 'No leader visible';
+        leaderCopy.textContent = 'The cluster is either still converging or below quorum. Connectivity cards below show which nodes are reachable.';
+      }
+    }
+
+    function renderCluster(states) {
+      clusterGrid.innerHTML = states.map(item => `
+        <article class="panel node-card ${selectedNodeId === item.node.nodeId ? 'selected' : ''}" data-node-id="${escapeHtml(item.node.nodeId)}">
+          <div class="node-header">
+            <div>
+              <h3 class="node-title">${escapeHtml(item.node.nodeId)}</h3>
+              <div class="node-url">${escapeHtml(item.node.uri)}</div>
+            </div>
+            <span class="status-chip ${roleClass(item.state.role)}">${escapeHtml(item.state.role)}</span>
+          </div>
+          <div class="node-metrics">
+            <div class="metric"><span>Term</span><strong>${item.state.currentTerm}</strong></div>
+            <div class="metric"><span>Commit</span><strong>${item.state.commitIndex}</strong></div>
+            <div class="metric"><span>Logs</span><strong>${item.state.logSize}</strong></div>
+          </div>
+        </article>
+      `).join('');
+
+      clusterGrid.querySelectorAll('.node-card').forEach(card => {
+        card.addEventListener('click', async () => {
+          selectedNodeId = card.dataset.nodeId;
+          renderCluster(states);
+          await renderLogs();
+        });
       });
     }
-  }
 
-  function renderCircle(stats) {
-    const existingNodes = Array.from(canvas.querySelectorAll('.node'));
-    existingNodes.forEach(node => {
-      if (!node.classList.contains('particles')) {
-        node.remove();
-      }
-    });
-
-    const n = stats.length;
-    const cx = 350, cy = 350, r = 220;
-    const positions = [];
-
-    stats.forEach((node, i) => {
-      const angle = (2 * Math.PI * i) / n - Math.PI / 2;
-      const x = cx + r * Math.cos(angle);
-      const y = cy + r * Math.sin(angle);
-      positions.push({ x, y });
-
-      const div = document.createElement('div');
-      div.className = 'node';
-
-      if (node.state.role === 'LEADER') div.classList.add('leader');
-      else if (node.state.role === 'FOLLOWER') div.classList.add('follower');
-      else if (node.state.role === 'CANDIDATE') div.classList.add('candidate');
-      else div.classList.add('offline');
-
-      div.style.left = (x - 60) + 'px';
-      div.style.top = (y - 60) + 'px';
-      div.style.animationDelay = (i * 0.1) + 's';
-
-      const shortId = node.state.nodeId.includes('://')
-        ? node.state.nodeId.split('://')[1].split(':')[0].split('.').slice(-2).join('.')
-        : node.state.nodeId;
-
-      div.innerHTML = `
-        <div class="node-inner">
-          <div class="node-id">${shortId}</div>
-          <div class="node-role">${node.state.role}</div>
-          <div class="node-term">term ${node.state.currentTerm}</div>
-        </div>
-      `;
-
-      canvas.appendChild(div);
-    });
-
-    drawConnections(stats, positions);
-
-    const leader = stats.find(s => s.state.role === 'LEADER');
-    if (leader) {
-      leaderInfo.className = 'leader-info';
-      const shortId = leader.state.nodeId.includes('://')
-        ? leader.state.nodeId.split('://')[1].split(':')[0].split('.').slice(-2).join('.')
-        : leader.state.nodeId;
-      leaderInfo.innerHTML = `
-        <span class="status-indicator status-online"></span>
-        Leader: <strong>${shortId}</strong> (term ${leader.state.currentTerm})
-      `;
-    } else {
-      leaderInfo.className = 'leader-info no-leader';
-      leaderInfo.innerHTML = `
-        <span class="status-indicator status-offline"></span>
-        <strong>No leader</strong> – election in progress
-      `;
+    function renderHealth(states) {
+      healthList.innerHTML = states.map(item => {
+        const label = item.ok
+          ? (item.node.online ? 'ONLINE' : 'DISCOVERED')
+          : (item.node.online ? 'DEGRADED' : 'OFFLINE');
+        const className = item.ok ? 'online' : (item.node.online ? 'degraded' : 'offline');
+        return `
+          <div class="health-row">
+            <div>
+              <strong>${escapeHtml(item.node.nodeId)}</strong><br />
+              <span>${escapeHtml(item.node.uri)}</span>
+            </div>
+            <div class="health-badge ${className}">${label}</div>
+          </div>
+        `;
+      }).join('');
     }
 
-    const onlineNodes = stats.filter(s => s.state.role !== 'OFFLINE').length;
-    const totalTerm = Math.max(...stats.map(s => s.state.currentTerm));
-    const totalCommits = Math.max(...stats.map(s => s.state.commitIndex));
+    async function renderLogs() {
+      if (!selectedNodeId) {
+        logsTitle.textContent = 'Node Logs';
+        logsSubtitle.textContent = 'Pick a node to inspect its replicated log.';
+        logsView.className = 'log-empty';
+        logsView.textContent = 'No node selected yet.';
+        return;
+      }
 
-    statsDiv.innerHTML = `
-      <div class="stat-card">
-        <div class="stat-label">Total Nodes</div>
-        <div class="stat-value">${stats.length}</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-label">Online</div>
-        <div class="stat-value">${onlineNodes}</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-label">Current Term</div>
-        <div class="stat-value">${totalTerm}</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-label">Commit Index</div>
-        <div class="stat-value">${totalCommits}</div>
-      </div>
-    `;
-  }
+      try {
+        const logs = await fetchNodeLogs(selectedNodeId);
+        logsTitle.textContent = `Node Logs: ${selectedNodeId}`;
+        logsSubtitle.textContent = 'Entries below are returned by the selected node only.';
+        if (!Array.isArray(logs) || logs.length === 0) {
+          logsView.className = 'log-empty';
+          logsView.textContent = 'This node has no log entries yet.';
+          return;
+        }
 
-  async function tick() {
-    const stats = await Promise.all(nodeUrls.map(fetchState));
-    renderCircle(stats);
-  }
+        logsView.className = '';
+        logsView.innerHTML = `
+          <table class="log-table">
+            <thead>
+              <tr>
+                <th>Index</th>
+                <th>Term</th>
+                <th>Command</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${logs.map(entry => `
+                <tr>
+                  <td>${escapeHtml(entry.index)}</td>
+                  <td>${escapeHtml(entry.term)}</td>
+                  <td>${escapeHtml(entry.command)}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        `;
+      } catch (error) {
+        logsView.className = 'log-empty';
+        logsView.textContent = `Unable to load logs for ${selectedNodeId}.`;
+      }
+    }
 
-  if (nodeUrls.length) {
+    async function tick() {
+      try {
+        const nodes = await fetchClusterNodes();
+        const states = await Promise.all(nodes.map(fetchNodeState));
+        if (!selectedNodeId && states.length > 0) {
+          selectedNodeId = states[0].node.nodeId;
+        }
+        renderSummary(states);
+        renderCluster(states);
+        renderHealth(states);
+        await renderLogs();
+      } catch (error) {
+        summaryPills.innerHTML = `<div class="pill"><span class="pill-label">Status</span><span class="pill-value">Unavailable</span></div>`;
+        leaderName.textContent = 'Dashboard unavailable';
+        leaderCopy.textContent = 'The local node did not respond to cluster discovery. Start a node and reload this page.';
+        clusterGrid.innerHTML = '';
+        healthList.innerHTML = '';
+        logsView.className = 'log-empty';
+        logsView.textContent = 'No cluster data available.';
+      }
+    }
+
     tick();
-    setInterval(tick, 1000);
-  } else {
-    leaderInfo.className = 'leader-info no-leader';
-    leaderInfo.innerHTML = '<strong>No nodes specified</strong> – Add ?nodes= parameter';
-  }
-</script>
+    setInterval(tick, 1500);
+  </script>
 </body>
 </html>
