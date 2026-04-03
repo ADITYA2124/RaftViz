@@ -372,6 +372,37 @@ public class RaftNode {
         return role == NodeRole.LEADER;
     }
 
+    public void triggerElectionNow() {
+        scheduler.execute(this::startElection);
+    }
+
+    public synchronized int bumpTerm() {
+        int newTerm = currentTerm.incrementAndGet();
+        role = NodeRole.FOLLOWER;
+        votedFor = null;
+        leaderId = null;
+        stopHeartbeat();
+        resetElectionTimer();
+        return newTerm;
+    }
+
+    public synchronized int stepDown() {
+        if (role == NodeRole.LEADER) {
+            role = NodeRole.FOLLOWER;
+            leaderId = null;
+            votedFor = null;
+            stopHeartbeat();
+            resetElectionTimer();
+        }
+        return currentTerm.get();
+    }
+
+    public synchronized int bumpTermAndTriggerElection() {
+        int newTerm = bumpTerm();
+        scheduler.execute(this::startElection);
+        return newTerm;
+    }
+
     public synchronized String currentLeader() {
         return leaderId;
     }
