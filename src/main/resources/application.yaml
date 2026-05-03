@@ -1,3 +1,7 @@
+spring:
+  config:
+    import: optional:file:.env[.properties]
+
 server:
   port: ${PORT:8080}
   shutdown: graceful
@@ -18,10 +22,10 @@ raft:
   discovery:
     port: ${RAFT_DISCOVERY_PORT:4446}
     announce-interval-ms: ${RAFT_DISCOVERY_ANNOUNCE_INTERVAL_MS:1000}
-    stale-after-ms: ${RAFT_DISCOVERY_STALE_AFTER_MS:4000}
+    stale-after-ms: ${RAFT_DISCOVERY_STALE_AFTER_MS:10000}
     evict-after-ms: ${RAFT_DISCOVERY_EVICT_AFTER_MS:30000}
     local-scan-enabled: ${RAFT_DISCOVERY_LOCAL_SCAN_ENABLED:true}
     local-scan-start-port: ${RAFT_DISCOVERY_LOCAL_SCAN_START_PORT:8080}
     local-scan-end-port: ${RAFT_DISCOVERY_LOCAL_SCAN_END_PORT:8090}
     lan-scan-enabled: ${RAFT_DISCOVERY_LAN_SCAN_ENABLED:false}
-    lan-scan-interval-ms: ${RAFT_DISCOVERY_LAN_SCAN_INTERVAL_MS:10000}
+    lan-scan-interval-ms: ${RAFT_DISCOVERY_LAN_SCAN_INTERVAL_MS:3000}

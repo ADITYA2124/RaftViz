@@ -118,7 +118,7 @@ public class ClusterMembershipService {
             scheduler.scheduleAtFixedRate(this::scanLocalPorts, 0, Math.max(announceIntervalMs * 2, 1500), TimeUnit.MILLISECONDS);
         }
         if (lanScanEnabled) {
-            scheduler.scheduleWithFixedDelay(this::scanLanSubnet, 0, Math.max(lanScanIntervalMs, 5000), TimeUnit.MILLISECONDS);
+            scheduler.scheduleWithFixedDelay(this::scanLanSubnet, 0, Math.max(lanScanIntervalMs, 1500), TimeUnit.MILLISECONDS);
         }
     }
 
