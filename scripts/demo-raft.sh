@@ -5,16 +5,21 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 JAR_PATH="$ROOT_DIR/target/RaftViz-0.0.1-SNAPSHOT.jar"
 RUNTIME_DIR="$ROOT_DIR/demo-runtime"
-DISCOVERY_GROUP="${RAFT_DISCOVERY_GROUP:-230.0.0.15}"
+
+NODE_ID="${NODE_ID:-${1:-node-1}}"
+PORT="${PORT:-8080}"
 DISCOVERY_PORT="${RAFT_DISCOVERY_PORT:-4446}"
-PORTS=(8080 8081 8082 8083)
-NODE_IDS=(node-1 node-2 node-3 node-4)
+LAN_SCAN_INTERVAL_MS="${RAFT_DISCOVERY_LAN_SCAN_INTERVAL_MS:-3000}"
+STALE_AFTER_MS="${RAFT_DISCOVERY_STALE_AFTER_MS:-15000}"
+ELECTION_TIMEOUT_MIN="${ELECTION_TIMEOUT_MIN:-5000}"
+ELECTION_TIMEOUT_MAX="${ELECTION_TIMEOUT_MAX:-9000}"
+HEARTBEAT_INTERVAL="${HEARTBEAT_INTERVAL:-1000}"
 PIDS=()
 
 cleanup() {
   if [[ ${#PIDS[@]} -gt 0 ]]; then
     echo
-    echo "Stopping demo nodes..."
+    echo "Stopping ${NODE_ID}..."
     for pid in "${PIDS[@]}"; do
       kill "$pid" >/dev/null 2>&1 || true
     done
@@ -31,9 +36,54 @@ require_command() {
   fi
 }
 
+usage() {
+  cat <<EOF
+Usage:
+  bash scripts/demo-raft.sh node-1
+  bash scripts/demo-raft.sh node-2
+
+Run this script on both laptops. Laptop A should use node-1, laptop B should use node-2.
+
+Optional overrides:
+  ADVERTISE_ADDR=http://192.168.29.186:8080 bash scripts/demo-raft.sh node-1
+  PORT=8080 bash scripts/demo-raft.sh node-2
+EOF
+}
+
+validate_node_id() {
+  if [[ "$NODE_ID" != "node-1" && "$NODE_ID" != "node-2" ]]; then
+    usage
+    echo
+    echo "NODE_ID must be node-1 or node-2 for this network demo." >&2
+    exit 1
+  fi
+}
+
+detect_lan_ip() {
+  if [[ -n "${ADVERTISE_ADDR:-}" ]]; then
+    echo "$ADVERTISE_ADDR" | sed -E 's#^https?://([^:/]+).*#\1#'
+    return 0
+  fi
+
+  if command -v powershell.exe >/dev/null 2>&1; then
+    powershell.exe -NoProfile -Command \
+      "Get-NetIPAddress -AddressFamily IPv4 | Where-Object { \$_.IPAddress -notlike '127.*' -and \$_.IPAddress -notlike '169.254.*' -and \$_.IPAddress -notmatch '^172\.(1[6-9]|2[0-9]|3[0-1])\.' } | Sort-Object @{Expression={ if (\$_.IPAddress -like '192.168.*') { 0 } elseif (\$_.IPAddress -like '10.*') { 1 } else { 2 } }}, InterfaceMetric | Select-Object -First 1 -ExpandProperty IPAddress" \
+      | tr -d '\r' \
+      | head -n 1
+    return 0
+  fi
+
+  if command -v hostname >/dev/null 2>&1; then
+    hostname -I 2>/dev/null | tr ' ' '\n' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' | grep -v '^127\.' | head -n 1
+    return 0
+  fi
+
+  return 1
+}
+
 wait_for_http() {
   local url="$1"
-  local attempts="${2:-60}"
+  local attempts="${2:-90}"
   local delay="${3:-1}"
 
   for ((i = 1; i <= attempts; i++)); do
@@ -47,28 +97,29 @@ wait_for_http() {
   exit 1
 }
 
-start_node() {
-  local index="$1"
-  local node_id="${NODE_IDS[$index]}"
-  local port="${PORTS[$index]}"
-  local base_url="http://127.0.0.1:${port}"
-  local log_file="$RUNTIME_DIR/${node_id}.log"
+cluster_has_both_nodes() {
+  local base_url="$1"
+  local snapshot
+  snapshot="$(curl -fsS "${base_url}/raft/cluster/state" 2>/dev/null || true)"
+  [[ "$snapshot" == *'"nodeId":"node-1"' && "$snapshot" == *'"nodeId":"node-2"' ]]
+}
 
-  mkdir -p "$RUNTIME_DIR"
+wait_for_two_node_cluster() {
+  local base_url="$1"
+  local attempts="${2:-80}"
 
-  echo "Starting ${node_id} on ${base_url}"
-  (
-    cd "$ROOT_DIR"
-    PORT="$port" \
-    NODE_ID="$node_id" \
-    ADVERTISE_ADDR="$base_url" \
-    RAFT_DISCOVERY_GROUP="$DISCOVERY_GROUP" \
-    RAFT_DISCOVERY_PORT="$DISCOVERY_PORT" \
-    java -jar "$JAR_PATH" >"$log_file" 2>&1
-  ) &
+  echo "Waiting until node-1 and node-2 are visible on this dashboard..."
+  for ((i = 1; i <= attempts; i++)); do
+    if cluster_has_both_nodes "$base_url"; then
+      echo "Both nodes are visible in the dashboard snapshot."
+      return 0
+    fi
+    sleep 2
+  done
 
-  PIDS+=("$!")
-  wait_for_http "${base_url}/raft/state"
+  echo "Could not see both node-1 and node-2 yet." >&2
+  echo "Open ${base_url}/raft/cluster/state to inspect the current snapshot." >&2
+  exit 1
 }
 
 append_log() {
@@ -81,26 +132,64 @@ append_log() {
     "${base_url}/log" >/dev/null
 }
 
+trigger_election() {
+  local base_url="$1"
+
+  echo "Triggering election from ${NODE_ID}..."
+  curl -fsS -X POST "${base_url}/raft/simulate/trigger-election" >/dev/null || true
+  sleep 4
+}
+
+start_node() {
+  local base_url="$1"
+  local log_file="$RUNTIME_DIR/${NODE_ID}.log"
+
+  mkdir -p "$RUNTIME_DIR"
+
+  echo "Starting ${NODE_ID} on ${base_url}"
+  (
+    cd "$ROOT_DIR"
+    PORT="$PORT" \
+    NODE_ID="$NODE_ID" \
+    ADVERTISE_ADDR="$base_url" \
+    RAFT_DISCOVERY_PORT="$DISCOVERY_PORT" \
+    RAFT_DISCOVERY_LAN_SCAN_ENABLED=true \
+    RAFT_DISCOVERY_LAN_SCAN_INTERVAL_MS="$LAN_SCAN_INTERVAL_MS" \
+    RAFT_DISCOVERY_STALE_AFTER_MS="$STALE_AFTER_MS" \
+    ELECTION_TIMEOUT_MIN="$ELECTION_TIMEOUT_MIN" \
+    ELECTION_TIMEOUT_MAX="$ELECTION_TIMEOUT_MAX" \
+    HEARTBEAT_INTERVAL="$HEARTBEAT_INTERVAL" \
+    java -jar "$JAR_PATH" >"$log_file" 2>&1
+  ) &
+
+  PIDS+=("$!")
+  wait_for_http "${base_url}/raft/state"
+}
+
 print_banner() {
+  local base_url="$1"
+
   cat <<EOF
 
-RaftViz demo cluster is live.
+RaftViz two-laptop network demo is live.
+
+This laptop:
+  ${NODE_ID} -> ${base_url}
 
 Dashboard:
-  http://127.0.0.1:8080/dashboard.html
+  ${base_url}/dashboard.html
 
-Swagger UI:
-  http://127.0.0.1:8080/swagger-ui/index.html
+What this script does:
+  1. Starts this laptop as ${NODE_ID}.
+  2. Uses LAN discovery to find the other laptop.
+  3. Waits until node-1 and node-2 are visible on the dashboard.
+  4. Triggers a leader election.
+  5. Sends sample log entries through the cluster.
+  6. Keeps running until you press Ctrl+C.
 
-OpenAPI JSON:
-  http://127.0.0.1:8080/v3/api-docs
-
-What this demo does:
-  1. Starts 3 Raft nodes.
-  2. Waits for leader election.
-  3. Appends sample log entries through the cluster.
-  4. Starts node-4 later so the dashboard updates dynamically.
-  5. Continues running until you press Ctrl+C.
+Run on the other laptop with the opposite node id:
+  bash scripts/demo-raft.sh node-1
+  bash scripts/demo-raft.sh node-2
 
 EOF
 }
@@ -108,6 +197,7 @@ EOF
 main() {
   require_command java
   require_command curl
+  validate_node_id
 
   cd "$ROOT_DIR"
 
@@ -117,30 +207,30 @@ main() {
     "$ROOT_DIR/mvnw" -q -DskipTests package
   fi
 
-  print_banner
+  local_ip="$(detect_lan_ip || true)"
+  if [[ -z "$local_ip" ]]; then
+    echo "Could not detect a LAN IP. Run with ADVERTISE_ADDR=http://YOUR_LAN_IP:${PORT}" >&2
+    exit 1
+  fi
 
-  start_node 0
-  start_node 1
-  start_node 2
+  base_url="${ADVERTISE_ADDR:-http://${local_ip}:${PORT}}"
 
-  echo "Waiting for cluster discovery to settle..."
-  sleep 6
+  print_banner "$base_url"
+  start_node "$base_url"
+  wait_for_two_node_cluster "$base_url"
 
-  echo "Appending initial log entries..."
-  append_log "http://127.0.0.1:8080" "create order ledger"
-  append_log "http://127.0.0.1:8081" "replicate inventory snapshot"
-  append_log "http://127.0.0.1:8082" "compact stale audit markers"
+  if [[ "$NODE_ID" == "node-1" ]]; then
+    trigger_election "$base_url"
 
-  echo "Starting late-joining node to demonstrate dynamic discovery..."
-  start_node 3
+    echo "Appending demo log entries. They should appear in the dashboard log table."
+    append_log "$base_url" "network demo started by node-1"
+    append_log "$base_url" "node-1 and node-2 discovered over LAN"
+    append_log "$base_url" "leader election simulated from node-1"
+  else
+    echo "node-2 is visible and waiting. node-1 will trigger election and append demo logs."
+  fi
 
-  sleep 6
-
-  echo "Appending more log entries after node-4 joins..."
-  append_log "http://127.0.0.1:8083" "node 4 joined the cluster"
-  append_log "http://127.0.0.1:8080" "commit payment batch"
-
-  echo "Demo is running. Open the dashboard and watch node discovery and per-node logs update."
+  echo "Demo is running. Keep ${base_url}/dashboard.html open to watch topology, roles, and logs."
   while true; do
     sleep 5
   done
