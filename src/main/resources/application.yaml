@@ -11,6 +11,7 @@ management:
 raft:
   node-id: ${NODE_ID:node-1}
   advertise-addr: ${ADVERTISE_ADDR:http://localhost:8080}
+  peers: ${PEERS:}
   election-timeout-min: ${ELECTION_TIMEOUT_MIN:1200}
   election-timeout-max: ${ELECTION_TIMEOUT_MAX:2000}
   heartbeat-interval: ${HEARTBEAT_INTERVAL:500}
@@ -22,3 +23,5 @@ raft:
     local-scan-enabled: ${RAFT_DISCOVERY_LOCAL_SCAN_ENABLED:true}
     local-scan-start-port: ${RAFT_DISCOVERY_LOCAL_SCAN_START_PORT:8080}
     local-scan-end-port: ${RAFT_DISCOVERY_LOCAL_SCAN_END_PORT:8090}
+    lan-scan-enabled: ${RAFT_DISCOVERY_LAN_SCAN_ENABLED:false}
+    lan-scan-interval-ms: ${RAFT_DISCOVERY_LAN_SCAN_INTERVAL_MS:10000}

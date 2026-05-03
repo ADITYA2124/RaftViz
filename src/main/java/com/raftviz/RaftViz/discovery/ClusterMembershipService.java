@@ -65,6 +65,9 @@ public class ClusterMembershipService {
     private final boolean localScanEnabled;
     private final int localScanStartPort;
     private final int localScanEndPort;
+    private final boolean lanScanEnabled;
+    private final long lanScanIntervalMs;
+    private final List<Peer> configuredPeers;
     private final HttpClient httpClient = new HttpClient();
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(4);
@@ -82,7 +85,10 @@ public class ClusterMembershipService {
             @Value("${raft.discovery.evict-after-ms:30000}") long evictAfterMs,
             @Value("${raft.discovery.local-scan-enabled:true}") boolean localScanEnabled,
             @Value("${raft.discovery.local-scan-start-port:8080}") int localScanStartPort,
-            @Value("${raft.discovery.local-scan-end-port:8090}") int localScanEndPort
+            @Value("${raft.discovery.local-scan-end-port:8090}") int localScanEndPort,
+            @Value("${raft.discovery.lan-scan-enabled:false}") boolean lanScanEnabled,
+            @Value("${raft.discovery.lan-scan-interval-ms:10000}") long lanScanIntervalMs,
+            @Value("${raft.peers:}") String configuredPeers
     ) {
         this.nodeId = nodeId;
         this.selfUri = selfUri;
@@ -93,16 +99,26 @@ public class ClusterMembershipService {
         this.localScanEnabled = localScanEnabled;
         this.localScanStartPort = localScanStartPort;
         this.localScanEndPort = localScanEndPort;
+        this.lanScanEnabled = lanScanEnabled;
+        this.lanScanIntervalMs = lanScanIntervalMs;
+        this.configuredPeers = parseConfiguredPeers(configuredPeers);
     }
 
     @PostConstruct
     public void start() {
         upsert(nodeId, selfUri, true, System.currentTimeMillis());
+        configuredPeers.forEach(peer -> upsert(peer.id(), peer.uri(), peer.id().equals(nodeId), System.currentTimeMillis()));
         scheduler.execute(this::listenForAnnouncements);
         scheduler.scheduleAtFixedRate(this::announceSelf, 0, announceIntervalMs, TimeUnit.MILLISECONDS);
+        if (!configuredPeers.isEmpty()) {
+            scheduler.scheduleAtFixedRate(this::scanConfiguredPeers, 0, Math.max(announceIntervalMs * 2, 1500), TimeUnit.MILLISECONDS);
+        }
         scheduler.scheduleAtFixedRate(this::pruneExpiredNodes, evictAfterMs, Math.max(announceIntervalMs, 1000), TimeUnit.MILLISECONDS);
         if (localScanEnabled) {
             scheduler.scheduleAtFixedRate(this::scanLocalPorts, 0, Math.max(announceIntervalMs * 2, 1500), TimeUnit.MILLISECONDS);
+        }
+        if (lanScanEnabled) {
+            scheduler.scheduleWithFixedDelay(this::scanLanSubnet, 0, Math.max(lanScanIntervalMs, 5000), TimeUnit.MILLISECONDS);
         }
     }
 
@@ -233,6 +249,38 @@ public class ClusterMembershipService {
         }
     }
 
+    private void scanConfiguredPeers() {
+        for (Peer peer : configuredPeers) {
+            if (!peer.id().equals(nodeId)) {
+                probeUri(peer.uri().toString());
+            }
+        }
+    }
+
+    private void scanLanSubnet() {
+        String host = selfUri.getHost();
+        if (host == null) {
+            return;
+        }
+
+        String[] octets = host.split("\\.");
+        if (octets.length != 4) {
+            return;
+        }
+
+        int port = selfUri.getPort() > 0 ? selfUri.getPort() : 8080;
+        String prefix = octets[0] + "." + octets[1] + "." + octets[2] + ".";
+        List<String> candidates = new ArrayList<>();
+        for (int hostOctet = 1; hostOctet <= 254; hostOctet++) {
+            String candidateHost = prefix + hostOctet;
+            if (!candidateHost.equals(host)) {
+                candidates.add("http://" + candidateHost + ":" + port);
+            }
+        }
+
+        candidates.parallelStream().forEach(this::probeUri);
+    }
+
     private void probeUri(String candidateUri) {
         try {
             NodeStatus status = httpClient.get(candidateUri + "/raft/state", NodeStatus.class);
@@ -243,6 +291,31 @@ public class ClusterMembershipService {
             upsert(status.nodeId, URI.create(uriFromStatus), status.nodeId.equals(nodeId), System.currentTimeMillis());
         } catch (Exception ignored) {
         }
+    }
+
+    private List<Peer> parseConfiguredPeers(String rawPeers) {
+        if (rawPeers == null || rawPeers.isBlank()) {
+            return List.of();
+        }
+
+        List<Peer> peers = new ArrayList<>();
+        for (String rawPeer : rawPeers.split(",")) {
+            String peer = rawPeer.trim();
+            if (peer.isBlank()) {
+                continue;
+            }
+
+            String[] parts = peer.split("=", 2);
+            if (parts.length != 2 || parts[0].isBlank() || parts[1].isBlank()) {
+                continue;
+            }
+
+            try {
+                peers.add(new Peer(parts[0].trim(), URI.create(parts[1].trim())));
+            } catch (IllegalArgumentException ignored) {
+            }
+        }
+        return peers;
     }
 
     private void pruneExpiredNodes() {
