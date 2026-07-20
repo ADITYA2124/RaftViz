@@ -1,7 +1,20 @@
 # RaftViz
 
-RaftViz is a Spring Boot project for visualizing how the Raft consensus algorithm elects leaders, replicates logs, and keeps distributed state consistent. The project is designed to be useful both as a learning tool and as a practical demonstration of why efficient replicated log storage matters in distributed systems.
+RaftViz is a **final-year group project** that visualizes the **Raft Consensus Algorithm**, demonstrating leader election, log replication, dynamic node discovery, and fault-tolerant distributed state management. Built using **Java**, **Spring Boot**, **Maven**, and **Docker**, the project provides an interactive platform for understanding how distributed systems achieve consensus and maintain consistency across multiple nodes.
 
+## Team Project
+
+RaftViz was developed collaboratively as part of our **Bachelor of Technology Final-Year Project**. The project was implemented by a team of 4 people namely "**ADITYA ARORA**","**ASHMIT MALHOTRA**","**JAI YADAV**","**JIYA SHARMA**", with each member contributing to different components of the system.
+
+This repository is maintained as **my portfolio copy** of the project to showcase my contributions and the overall implementation.
+
+## My Contributions
+
+- Implemented **randomized election timeout logic** to reduce split-vote scenarios during leader election.
+- Developed the **Candidate state** and integrated the **RequestVote RPC** workflow as part of the Raft leader election process.
+- Contributed to implementing and testing **leader election**, **leader failover**, and **node recovery** scenarios.
+- Assisted in backend development using **Spring Boot REST APIs**, debugging distributed node communication, and validating cluster behavior.
+- 
 ## Why This Project Is Important
 
 Raft is one of the most approachable and widely taught consensus algorithms, but many demos stop at theory. RaftViz focuses on the parts people usually want to see in action:
